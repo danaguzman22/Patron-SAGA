@@ -1,0 +1,12 @@
+venv/
+
+#Byte-compiled / optimized / DLL files
+_pycache_/
+*.py[cod]
+*$py.class
+
+# Ignorar configuración de VSCode
+.vscode/settings.json
+
+# Ignorar archivos de espacio de trabajo (workspace)
+*.code-workspace

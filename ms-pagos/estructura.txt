@@ -1,0 +1,12 @@
+ms-pagos/
+├── app.py                 # Archivo principal de Flask
+├── models.py              # Modelos de datos (Pago, etc.)
+├── services/
+│   └── pago_service.py    # Lógica de negocio
+|       evento_service.py   
+├── blueprints/
+│   └── pagos.py           # Blueprint para rutas de pagos
+|__  repositories/
+│   └── pago_repository.py      
+|
+└── config.py              # Configuración (opcional)

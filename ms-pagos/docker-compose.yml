@@ -1,22 +1,14 @@
 services:
   ms-pagos:
     image: ms-pagos:v1.0.0
-    deploy:
-      replicas: 2
+    ports:
+      - "5002:5002"
     networks:
       - mired
-    #ports:
-    # - 5002:5002
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=${FLASK_ENV:-production}
       - FLASK_DEBUG=${FLASK_DEBUG:-0}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.ms-pagos.rule=Host(`pagos.localhost`)"
-      - "traefik.http.routers.ms-pagos.tls=true"
-      - "traefik.http.services.ms-pagos.loadbalancer.server.port=5002"
-      - "traefik.docker.network=mired"
 
 networks:
   mired:

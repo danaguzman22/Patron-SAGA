@@ -3,11 +3,11 @@ import requests
 
 app = Flask(__name__)
 
-# ======================
-#  URLs (Docker Compose)
-# ======================
+# ==========================
+#  URLs de los microservicios
+# ==========================
 
-URL_CATALOGO = "http://ms-catalogo:5001/catalogo/producto"
+URL_CATALOGO = "http://ms-catalogo:5001/producto"
 
 URL_PAGOS = "http://ms-pagos:5002/pagos/transaccion"
 URL_PAGOS_COMP = "http://ms-pagos:5002/pagos/compensar"
@@ -19,77 +19,83 @@ URL_COMPRAS = "http://ms-compras:8080/compras/realizar"
 URL_COMPRAS_COMP = "http://ms-compras:8080/compras/compensar"
 
 
-# ======================
-#   SAGA ORQUESTADOR
-# ======================
+# ==========================
+#   Clase Saga
+# ==========================
 
 class Saga:
     def __init__(self, data):
         self.data = data
-        self.steps = []
-        self.compensations = []
+        self.pasos = []
+        self.compensaciones = []
 
-    def add(self, action, compensation):
-        self.steps.append(action)
-        self.compensations.insert(0, compensation)
+    def agregar(self, accion, compensacion):
+        self.pasos.append(accion)
+        self.compensaciones.insert(0, compensacion)
 
-    def run(self):
-        for step in self.steps:
-            status = step()
-            if status != 200:
-                self.rollback()
-                return jsonify({"status": "failed", "error": step.__name__}), 409
+    def ejecutar(self):
+        for paso in self.pasos:
+            status = paso()
+            if status != 200:           # si falla uno, se invierten las compensaciones
+                self.revertir()
+                return jsonify({
+                    "status": "failed",
+                    "error": paso.__name__
+                }), 409
 
-        return jsonify({"status": "success", "producto": self.data}), 200
+        return jsonify({
+            "status": "success",
+            "producto": self.data
+        }), 200
 
-    def rollback(self):
-        for c in self.compensations:
-            c()
+    def revertir(self):
+        for compensacion in self.compensaciones:
+            compensacion()
 
 
-# ======================
-#   Servicios
-# ======================
+# ==========================
+#   Funciones de microservicios
+# ==========================
 
-def get_producto():
+def obtener_producto():
     r = requests.get(URL_CATALOGO)
     return r.json()["producto"]
 
-def pagar(prod):
-    return requests.post(URL_PAGOS, json=prod).status_code
+def pagar(producto):
+    return requests.post(URL_PAGOS, json=producto).status_code
 
 def pagar_comp():
     requests.post(URL_PAGOS_COMP)
 
-def reservar_inv(prod):
-    return requests.post(URL_INV, json=prod).status_code
+def inventario(producto):
+    return requests.post(URL_INV, json=producto).status_code
 
-def reservar_inv_comp():
+def inventario_comp():
     requests.post(URL_INV_COMP)
 
-def registrar_compra(prod):
-    return requests.post(URL_COMPRAS, json=prod).status_code
+def registrar_compra(producto):
+    return requests.post(URL_COMPRAS, json=producto).status_code
 
 def registrar_compra_comp():
     requests.post(URL_COMPRAS_COMP)
 
 
-# ======================
-#   Endpoint principal
-# ======================
+# ==========================
+#      Endpoint principal
+# ==========================
 
 @app.route("/orquestar/compra", methods=["POST"])
-def ejecutar_saga():
+def orquestar_compra():
 
-    producto = get_producto()
+    producto = obtener_producto()
 
     saga = Saga(producto)
 
-    saga.add(lambda: pagar(producto), pagar_comp)
-    saga.add(lambda: reservar_inv(producto), reservar_inv_comp)
-    saga.add(lambda: registrar_compra(producto), registrar_compra_comp)
+    saga.agregar(lambda: pagar(producto), pagar_comp)
+    saga.agregar(lambda: inventario(producto), inventario_comp)
+    saga.agregar(lambda: registrar_compra(producto), registrar_compra_comp)
 
-    return saga.run()
+    return saga.ejecutar()
 
 
 @app.route("/")
@@ -98,4 +104,4 @@ def home():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5010)

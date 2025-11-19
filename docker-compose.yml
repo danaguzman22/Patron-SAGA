@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+
+  ms-catalogo:
+    build: ./ms-catalogo
+    container_name: ms-catalogo
+    ports:
+      - "5001:5001"
+
+  ms-pagos:
+    build: ./ms-pagos
+    container_name: ms-pagos
+    ports:
+      - "5002:5002"
+
+  ms-inventario:
+    build: ./ms-inventario
+    container_name: ms-inventario
+    ports:
+      - "5003:5003"
+
+  ms-compras:
+    build: ./ms-compras
+    container_name: ms-compras
+    ports:
+      - "8080:8080"   # Spring Boot usa 8080 por defecto
+
+  ms-orquestador:
+    build: ./ms-orquestador
+    container_name: ms-orquestador
+    ports:
+      - "5010:5010"
+    depends_on:
+      - ms-catalogo
+      - ms-pagos
+      - ms-inventario
+      - ms-compras

@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 import requests
 import logging
+from functools import partial
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,6 +20,12 @@ URL_INV = "http://ms-inventario:5003/inventario"
 URL_COMPRAS = "http://ms-compras:8080/compras/realizar"
 URL_COMPRAS_COMP = "http://ms-compras:8080/compras/compensar"
 
+def nombrar(func, nombre):
+    func.__name__ = nombre
+    return func
+
+
+# --------------------------- SAGA ---------------------------
 class Saga:
     def __init__(self, data):
         self.data = data
@@ -26,54 +33,60 @@ class Saga:
         self.compensaciones = []
 
     def agregar(self, accion, compensacion=None):
-        
-        self.pasos.append(accion)
-        if compensacion:
-            self.compensaciones.insert(0, compensacion)
+        # Siempre se guarda la tupla (acción, compensación)
+        self.pasos.append((accion, compensacion))
 
     def ejecutar(self):
-        for paso in self.pasos:
-            status = paso()
-            logging.info(f"Paso ejecutado: {paso.__name__} | status = {status}")
+        for accion, compensacion in self.pasos:
+
+            status = accion()
+            logging.info(f"Paso ejecutado: {accion.__name__} | status = {status}")
 
             if status != 200:
-                logging.error(f"Paso fallido: {paso.__name__}")
+                logging.error(f"Paso fallido: {accion.__name__}")
                 self.revertir()
-
                 return jsonify({
                     "status": "failed",
-                    "error": paso.__name__
+                    "error": accion.__name__
                 }), 409
 
-        return jsonify({
-            "status": "success",
-            "producto": self.data
-        }), 200
+            # SOLO agregamos compensaciones de pasos exitosos
+            if compensacion:
+                self.compensaciones.append(compensacion)
+
+        return jsonify({"status": "success", "producto": self.data}), 200
 
     def revertir(self):
-        logging.info("Ejecutando compensaciones...")
-        for compensacion in self.compensaciones:
-            logging.info(f"Compensación: {compensacion.__name__}")
-            compensacion()
+        logging.info("=== INICIANDO COMPENSACIONES ===")
+
+        for compensacion in reversed(self.compensaciones):
+            logging.info(f"Ejecutando compensación → {compensacion.__name__}")
+
+            try:
+                respuesta = compensacion()
+                logging.info(f"✔️ Compensación {compensacion.__name__} ejecutada correctamente")
+            except Exception as e:
+                logging.error(f"❌ Error ejecutando compensación {compensacion.__name__}: {e}")
+
+        logging.info("=== FIN COMPENSACIONES ===")
 
 
+
+
+# ---------------------- PASOS ----------------------
 def obtener_producto():
     r = requests.get(URL_CATALOGO)
     return r.json()["producto"]
 
-# --- INVENTARIO ---
 def paso_inventario(producto):
     return requests.get(URL_INV).status_code
 
-# --- PAGO ---
 def paso_pago(producto):
     return requests.post(URL_PAGOS, json=producto).status_code
 
 def compensar_pago():
     requests.post(URL_PAGOS_COMP)
 
-
-# --- REGISTRAR COMPRA ---
 def paso_registrar(producto):
     return requests.post(URL_COMPRAS, json=producto).status_code
 
@@ -81,6 +94,7 @@ def compensar_registrar(producto):
     requests.post(URL_COMPRAS_COMP, json=producto)
 
 
+# -------------------- ENDPOINT ---------------------
 @app.route("/orquestar/compra", methods=["POST"])
 def orquestar_compra():
     producto = obtener_producto()
@@ -88,14 +102,27 @@ def orquestar_compra():
 
     saga = Saga(producto)
 
-    saga.agregar(lambda: paso_inventario(producto))
+    # Paso 1 - inventario (SIN compensación)
+    saga.agregar(
+        nombrar(partial(paso_inventario, producto), "paso_inventario"),
+        None
+    )
 
-    saga.agregar(lambda: paso_pago(producto), compensar_pago)
+    # Paso 2 - pago
+    saga.agregar(
+        nombrar(partial(paso_pago, producto), "paso_pago"),
+        nombrar(compensar_pago, "compensar_pago")
+    )
 
-    saga.agregar(lambda: paso_registrar(producto),
-                 lambda: compensar_registrar(producto))
+    # Paso 3 - registrar compra
+    saga.agregar(
+        nombrar(partial(paso_registrar, producto), "paso_registrar"),
+        nombrar(partial(compensar_registrar, producto), "compensar_registrar")
+    )
 
     return saga.ejecutar()
 
+
+
 if __name__ == "__main__":
-  app.run(host="0.0.0.0", port=5010)
+    app.run(host="0.0.0.0", port=5010)

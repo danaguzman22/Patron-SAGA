@@ -64,9 +64,9 @@ class Saga:
 
             try:
                 respuesta = compensacion()
-                logging.info(f"✔️ Compensación {compensacion.__name__} ejecutada correctamente")
+                logging.info(f"Compensación {compensacion.__name__} ejecutada correctamente")
             except Exception as e:
-                logging.error(f"❌ Error ejecutando compensación {compensacion.__name__}: {e}")
+                logging.error(f"Error ejecutando compensación {compensacion.__name__}: {e}")
 
         logging.info("=== FIN COMPENSACIONES ===")
 
